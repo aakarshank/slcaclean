@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { BoltIcon, CloudArrowUpIcon, HandRaisedIcon, ArrowRightCircleIcon } from "@heroicons/react/20/solid";
 import Select from "react-select";
 import Modal from "./modal";
-export let matchSaved = false;
+export let matchSaved = true;
 export function checkMatchSaved(){
     matchSaved = false;
 }
