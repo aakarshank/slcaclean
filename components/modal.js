@@ -2,7 +2,7 @@ import { ArrowRightCircleIcon, InformationCircleIcon } from "@heroicons/react/20
 import React, { useState } from "react";
 import { checkMatchSaved } from "./Pairing";
 
-export default function Modal({createNextRound, disabled,saved}) {
+export default function Modal({createNextRound, disabled,saved,text}) {
   const [showModal, setShowModal] = React.useState(false);
   const [showTip, setShowTip] = useState(false)
   return (
@@ -13,7 +13,7 @@ export default function Modal({createNextRound, disabled,saved}) {
       }
         } className={`${disabled ? "opacity-25 cursor-default" : "hover:bg-blue-700 cursor-pointer"} flex space-x-2 items-center bg-blue-500 text-white font-bold py-2 px-4 rounded max-w-fit `}> 
         <ArrowRightCircleIcon className="h-5 w-5" />
-        <p>Lock & Generate Next Round</p>
+        <p>{text}</p>
       </button>
       {disabled && 
         <div className={`${(!showTip) && "invisible"} flex items-center space-x-2`}>

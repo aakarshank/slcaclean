@@ -2,9 +2,12 @@ import prisma from "../../lib/prisma"
 import { unstable_getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]"
 
-const hello = require('swiss-pairing')();
 
-const pairing = require('./pairing');
+import * as pairing from './pairing';
+
+const hello = require('swiss-pairing')();
+;
+
 
 export default async function handler(req, res) {
 
@@ -72,7 +75,7 @@ export default async function handler(req, res) {
                 }
             }
         })
-
+        console.log(Object.keys(pairing))
         pairing.clearAll();
 
         // Turn matches into form acceptable by pairing.js

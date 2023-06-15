@@ -16,7 +16,7 @@ export let tournament_register_id = 0;
 export let match_register_id = 0;
 export let school_register_id = 0;
 export let player_register_id = 0;
-
+export let ATTEMPT_AMOUNT = 10000
 /* access functions */
 export function insert_school(school_name, school_state, school_district) {
     // Insert school object
@@ -881,12 +881,9 @@ function old_make_matches(players, players_nums, leftover) {
 
     while (true) {
         //console.log("Match attempt: ", full_tries);
-        full_tries += 1;
         // Deep copy just in case we need to try again
         let ww = [...players_nums];
         let new_matches = [];
-        let repeat_match = false;
-        let same_school = false;
         let ll = leftover;
         let l = ww.length; // Need to initialize because ww.length changes over time
 
@@ -921,59 +918,19 @@ function old_make_matches(players, players_nums, leftover) {
             // If it takes to many tries, we break out and retry the pairing with anothe randomization
             let tries = 0;
 
-            // P1 and P2 are NOT allowed to be from the same school unles ABSOLUTELY NECESSARY
-            while (p1.school == p2_school) {
-                //console.log(p2_school, p1.school, p1.school == p2_school);
-                // Keep trying
-                tries += 1;
+            p2_ww_index = Math.floor(Math.random() * (ww.length));
+            p2 = players[ww[p2_ww_index]];
+            p2_school = p2.school;
 
-                // Random select p2 and initialize all of the numbers
-                p2_ww_index = Math.floor(Math.random() * (ww.length));
-                p2 = players[ww[p2_ww_index]];
-                p2_school = p2.school;
-
-                // Ensure p1 hasn't played p2 before
-                for (let m of p1.matches) {
-                    if (m.opponent == p2_ww_index) {
-
-                        repeat_match = true;
-                    }
-                }
-
-                if (p1.school == p2_school) {
-                    same_school = true;
-                }
-
-                // Too many tries, break
-                if (tries > 50) {
-                    break;
-                }
-
-                // 1 player leftover, no more matches can be made
-                if (ww.length == 1) {
-                    break;
-                }
+            if (tries > 50) {
+                break;
             }
 
-            if (p1.school == p2_school) {
-                if (ww.length == 2) {
-                }
-                same_school = true;
+            // 1 player leftover, no more matches can be made
+            if (ww.length == 1) {
+                break;
             }
 
-            if (full_tries < 100) {
-                if ((players_nums.length > 2 && ((tries > 50 && full_tries < 50) || same_school || (repeat_match && (tries < 50 && full_tries < 50))))) { //
-                    failed = true;
-                    repeat_match = false;
-                    same_school = false;
-
-                    if (full_tries > 100) {
-                        failed = true;
-                    }
-
-                    break;
-                }
-            }
 
             // Remove p2 from ww because the decision is final
             ww.splice(ww.indexOf(String(p2.index)), 1);
@@ -996,26 +953,12 @@ function old_make_matches(players, players_nums, leftover) {
             });
         }
 
-        // If we've failed, reset and restart
-        if (failed && full_tries < 100) {
-            failed = false;
-            continue;
-        }
-
         // Somehow nothing failed and nothing broke
         ll = null;
 
         // If we have a leftover player, try to make a bye match
         if (ww.length != 0) {
             ll = ww[0];
-
-            // The player has already had a bye, and two byes in one tournament is sad :(
-            // There is a chance this could break if the tournament has 5 people and 6 rounds... But then again, swiss matching would break either way
-            // TODO: Maybe check if they don't have the least amount of byes? 
-            if (players[ww[0]].record.bye != 0) {
-                full_tries -= 1;
-                continue;
-            }
         }
 
         // We've successfully finished the matching
@@ -1024,6 +967,120 @@ function old_make_matches(players, players_nums, leftover) {
 
         return { new_matches: new_matches, ll: ll };
     }
+}
+
+function smart_color_switch(tournament_index, matches) {
+    let players = read_players_db(tournament_index);
+    let round_total = get_round_info(tournament_index).round_total;
+
+    for (let match of matches) {
+        let score_white = players[match.white_index].score;
+        let score_black = players[match.black_index].score;
+
+        let white_percentage_white = players[match.white_index].record.white / round_total;
+        let white_percentage_black = players[match.black_index].record.white / round_total;
+
+        // If white has played white more times than black, switch them around
+        if (white_percentage_white > white_percentage_black) {
+            let temp = match.white_index;
+            match.white_index = match.black_index;
+            match.black_index = temp;
+            continue;
+        }
+    }
+
+    // Find all matches where both players have the same score
+    let equal_score_matches = [];
+    let unequal_score_matches = [];
+
+    for (let match of matches) {
+        let score_white = players[match.white_index].score;
+        let score_black = players[match.black_index].score;
+
+        if (score_white != score_black) {
+            equal_score_matches.push(match);
+        } else {
+            unequal_score_matches.push(match);
+        }
+    }
+
+    // Color switch matches with equal scores
+    for (let m1 of equal_score_matches) {
+        for (let m2 of equal_score_matches) {
+            // If both matches have the same players, skip
+            if (m1.white_index == m2.white_index) {
+                continue;
+            }
+
+            // If both matches do not have equal scores, skip
+            if (players[m1.white_index].score != players[m2.white_index].score) {
+                continue;
+            }
+
+            // If the player playing white in match 1 has played white for 1/2 the tournament already
+            // and the player playing black in match 2 has played black for 1/2 the tournament already 
+            // attempt a switch
+            if (players[m1.white_index].record.white + 1 >= Math.floor(round_total / 2) &&
+                players[m2.black_index].record.black + 1 >= Math.floor(round_total / 2)) {
+
+                let p1 = players[m1.white_index];
+                let p2 = players[m2.black_index];
+
+                // Check that they are from different schools
+                let same_school = p1.school == p2.school;
+
+                // Check if they have played each other before
+                let repeat_match = false;
+
+                for (let m of p1.matches) {
+                    if (m.white_index == m2.black_index || m.black_index == m2.black_index) {
+                        repeat_match = true;
+                    }
+                }
+
+                // If this is a valid match, switch the players
+                if (!same_school && !repeat_match) {
+                    let temp = m1.white_index;
+                    m1.white_index = m2.black_index;
+                    m2.black_index = temp;
+                    // Switched!
+                }
+            }
+
+            // Basically the same thing but for the other two players
+            if (players[m1.black_index].record.white + 1 >= Math.floor(round_total / 2) &&
+                players[m2.white_index].record.black + 1 >= Math.floor(round_total / 2)) {
+
+                let p1 = players[m1.black_index];
+                let p2 = players[m2.white_index];
+
+                // Check that they are from different schools
+                let same_school = p1.school == p2.school;
+
+                // Check if they have played each other before
+                let repeat_match = false;
+
+                for (let m of p1.matches) {
+                    if (m.white_index == m2.white_index || m.black_index == m2.white_index) {
+                        repeat_match = true;
+                    }
+                }
+
+                // If this is a valid match, switch the players
+                if (!same_school && !repeat_match) {
+                    let temp = m1.black_index;
+                    m1.black_index = m2.white_index;
+                    m2.white_index = temp;
+                    // Switched!
+                }
+            }
+        }
+    }
+
+    // Combine all matches together
+    matches = equal_score_matches.concat(unequal_score_matches);
+
+    return matches;
 }
 
 
@@ -1040,6 +1097,8 @@ export function run_round(tournament_index) {
         //console.log("Unfinished matches, round not complete");
         return "Unfinished matches, round not complete";
     }
+
+    ATTEMPT_AMOUNT = Math.round(Object.keys(players).length / 5) * 5000;
 
     // Increment current round
     current_round++;
@@ -1222,6 +1281,7 @@ export function run_round(tournament_index) {
             ) {
                 new_matches = matches;
                 leftover = _leftover;
+                failed = false;
                 break;
             }
 
@@ -1233,7 +1293,7 @@ export function run_round(tournament_index) {
             }
         }
     }
-
+    /*
     console.log("Color disregard pairing?", failed);
 
     if (
@@ -1339,7 +1399,7 @@ export function run_round(tournament_index) {
                 break;
             }
         }
-    }
+    }*/
 
     console.log("Score disregard pairing?", failed);
 
@@ -1350,6 +1410,9 @@ export function run_round(tournament_index) {
         failed = false;
         console.log("Not accounting for score now");
         let tries = 0;
+        let optimal_matches = [];
+        let error = Infinity;
+
         while (true) {
             //console.log("Full pairing attempt:", tries);
             tries++;
@@ -1450,11 +1513,13 @@ export function run_round(tournament_index) {
         new_matches.length < Math.floor(Object.keys(players).length / 2) ||
         failed
     ) {
-        console.log("Disregarding score all the way");
         let tries = 0;
         let min_errors = Infinity;
+        let best_matches = [];
+        let best_leftover = null;
+
         while (true) {
-            if (tries % 100000 == 0) console.log("Full pairing attempt:", tries);
+            //if (tries % ATTEMPT_AMOUNT == 0) console.log("Full pairing attempt:", tries);
             tries++;
 
             // Sort the players based on wins
@@ -1493,12 +1558,13 @@ export function run_round(tournament_index) {
             let n_matches;
             let temp = make_matches(players, ww, leftover, round_total, false, false);
 
-            if (tries > 800000) {
+            if (tries > ATTEMPT_AMOUNT * 2) {
                 //console.log("old matching")
                 temp = old_make_matches(players, ww, leftover)
             }
 
             if (temp == "score_error") {
+                tries -= 1;
                 continue;
             }
 
@@ -1515,20 +1581,26 @@ export function run_round(tournament_index) {
             let _failed = false;
             let _errors = 0;
 
+            if (matches.length < Math.floor((Object.keys(player_register).length) / 2)) {
+                continue;
+            }
+
+
             for (let i = 0; i < matches.length; i++) {
+
                 let match = matches[i];
                 for (let m of players[match.white_index].matches) {
                     if (m.opponent == match.black_index) {
                         //console.log("repeat")
                         _failed = true;
-                        _errors++;
+                        _errors += 4;
                     }
                 }
 
                 if (Math.abs(players[match.white_index].score - players[match.black_index].score) > 1) {
                     //console.log("point diff")
                     _failed = true;
-                    _errors++;
+                    _errors += 1;
                 }
 
                 if (
@@ -1536,34 +1608,38 @@ export function run_round(tournament_index) {
                 ) {
                     //console.log("school")
                     _failed = true;
-                    _errors++;
+                    _errors += 2;
                 }
+            }
+
+            if (tries > 20 * ATTEMPT_AMOUNT) {
+                console.log("OUT");
+                console.log(best_matches);
+                new_matches = best_matches;
+                leftover = best_leftover;
+                break;
+            }
+
+
+            let temp_ww = [...win_list];
+
+            for (let i = 0; i < temp_ww.length; i++) {
+                if (temp_ww[i].length == 0) {
+                    temp_ww.pop(0);
+                }
+            }
+
+            if (temp_ww[0].indexOf(_leftover) == -1) {
+                _errors += players[_leftover].score * 2;
             }
 
             if (_errors < min_errors) {
                 min_errors = _errors;
+                best_matches = matches;
+                best_leftover = _leftover;
             }
 
-            //console.log(matches.length, Math.floor(Object.keys(players).length / 2), failed, _errors)
-
-            if (tries > 400000) {
-                if (_errors <= 1) {
-                    _failed = false;
-                }
-            }
-
-            if (tries > 700000) {
-                if (_errors <= 2) {
-                    _failed = false;
-                }
-            }
-
-            if (tries > 1000000) {
-                if (_errors <= min_errors) {
-                    _failed = false;
-                }
-            }
-
+            //console.log(tries, matches.length, Math.floor(Object.keys(players).length / 2), failed, _errors, min_errors, best_leftover)
 
             if (
                 matches.length >= Math.floor(Object.keys(players).length / 2) &&
@@ -1577,6 +1653,10 @@ export function run_round(tournament_index) {
     }
 
     console.log("Made matches");
+    //console.log("Matches before color switching:", new_matches)
+
+    new_matches = smart_color_switch(0, new_matches);
+
     console.log("New matches for round", current_round, ":", new_matches);
 
     for (let i = 0; i < new_matches.length; i++) {
@@ -1626,8 +1706,6 @@ export function run_round(tournament_index) {
         );
     }
 
-    console.log(leftover);
-
     if (
         Math.floor(Object.keys(players).length / 2) <
         Object.keys(players).length / 2 &&
@@ -1645,13 +1723,25 @@ export function run_round(tournament_index) {
             }
         }
 
-        console.log(missing_player);
+        //console.log(missing_player);
 
         leftover.push(missing_player);
     }
 
-    // Insert the bye match, if there is one
     if (leftover.length > 0) {
+        console.log("Leftover points: ", players[leftover[0]].score);
+    }
+
+    if (typeof leftover != "object" && leftover) {
+        console.log(leftover);
+        let index = insert_match(
+            tournament_index,
+            current_round,
+            Number(leftover),
+            Number(leftover)
+        );
+        update_match_bye(index);
+    } else if (leftover.length > 0) {
         let index = insert_match(
             tournament_index,
             current_round,
@@ -1708,6 +1798,28 @@ function random_match_result(match_index) {
     }
 }
 
+function one_school_wins_result(match_index, x) {
+    let players = read_players_db(0);
+
+    if (match_register[match_index].bye_match) {
+        return;
+    }
+
+    if (players[match_register[match_index].white_player_index].school == x) {
+        update_match(
+            match_index,
+            match_register[match_index].white_player_index,
+            match_register[match_index].black_player_index
+        );
+    } else {
+        update_match(
+            match_index,
+            match_register[match_index].black_player_index,
+            match_register[match_index].white_player_index
+        );
+    }
+}
+
 function test_case_1() {
     tournament_register = {};
     match_register = {};
@@ -1747,25 +1859,25 @@ function test_case_1() {
 
     run_round(0);
 
-    for (let i = 0; i < 4; i++) {
+    let x = Math.round(Object.keys(player_register).length / 2);
+
+    for (let i = 0; i < x; i++) {
         random_match_result(0 + i);
     }
 
     run_round(0);
-
-    for (let i = 0; i < 4; i++) {
-        random_match_result(4 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x + i);
     }
 
     run_round(0);
-
-    for (let i = 0; i < 4; i++) {
-        random_match_result(8 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 2 + i);
     }
-    run_round(0);
 
-    for (let i = 0; i < 4; i++) {
-        random_match_result(12 + i);
+    run_round(0);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 3 + i);
     }
 
     console.log("Final scores", sort_wins(4, read_players_db(0)));
@@ -1825,22 +1937,25 @@ function test_case_2() {
 
     run_round(0);
 
-    for (let i = 0; i < 10; i++) {
+    let x = Math.round(Object.keys(player_register).length / 2);
+
+    for (let i = 0; i < x; i++) {
         random_match_result(0 + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 10; i++) {
-        random_match_result(10 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 10; i++) {
-        random_match_result(20 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 2 + i);
     }
+
     run_round(0);
-    for (let i = 0; i < 10; i++) {
-        random_match_result(30 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 3 + i);
     }
 
     console.log("Final scores", sort_wins(4, read_players_db(0)));
@@ -1930,23 +2045,25 @@ function test_case_3() {
 
     run_round(0);
 
-    for (let i = 0; i < 23; i++) {
+    let x = Math.round(Object.keys(player_register).length / 2);
+
+    for (let i = 0; i < x; i++) {
         random_match_result(0 + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 23; i++) {
-        random_match_result(23 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 23; i++) {
-        random_match_result(46 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 2 + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 23; i++) {
-        random_match_result(69 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 3 + i);
     }
 
     console.log("Final scores", sort_wins(4, read_players_db(0)));
@@ -1984,37 +2101,154 @@ function test_case_4() {
 
     run_round(0);
 
-    for (let i = 0; i < 4; i++) {
+    let x = Math.round(Object.keys(player_register).length / 2);
+
+    for (let i = 0; i < x; i++) {
         random_match_result(0 + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 4; i++) {
-        random_match_result(4 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 4; i++) {
-        random_match_result(8 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 2 + i);
     }
 
     run_round(0);
-    for (let i = 0; i < 4; i++) {
-        random_match_result(12 + i);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 3 + i);
     }
 
     console.log("Final scores", sort_wins(4, read_players_db(0)));
 }
 
-const ATTEMPT_AMOUNT = 100000;
+function test_case_5() {
+    tournament_register = {};
+    match_register = {};
+    school_register = {};
+    player_register = {};
+
+    tournament_register_id = 0;
+    match_register_id = 0;
+    school_register_id = 0;
+    player_register_id = 0;
+
+    insert_school("Mountain Vista", "Colorado", "idk");
+
+    insert_player("Josiah", "Jex", 0, 1000);
+    insert_player("Logan", "Seader", 0, 1000);
+    insert_player("Lacey", "Rael", 0, 1000);
+    insert_player("Lucy", "Mock", 0, 1000);
+    insert_player("Tyler", "Simmons", 0, 1000);
+    insert_player("Eric", "Perez", 0, 1000);
+    insert_player("William", "Hoffman", 0, 1000);
+    insert_player("Kendall", "Rael", 0, 1000);
+    insert_player("Matthew", "Stangeland", 0, 1000);
+
+    for (let i = 0; i < player_register_id; i++) {
+        update_tournament_players(0, i);
+    }
+
+    run_round(0);
+
+    let x = Math.round(Object.keys(player_register).length / 2);
 
 
-//test_case_1();
-//console.log("\n");
-//test_case_2();
-//console.log("\n");
-//test_case_3();
-//console.log("\n");
+    for (let i = 0; i < x; i++) {
+        random_match_result(0 + i);
+    }
+
+    run_round(0);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x + i);
+    }
+
+    run_round(0);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 2 + i);
+    }
+
+    run_round(0);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 3 + i);
+    }
+
+    console.log("Final scores", sort_wins(4, read_players_db(0)));
+}
+
+function test_case_6() {
+    tournament_register = {};
+    match_register = {};
+    school_register = {};
+    player_register = {};
+
+    tournament_register_id = 0;
+    match_register_id = 0;
+    school_register_id = 0;
+    player_register_id = 0;
+
+    insert_school("Mountain Vista", "Colorado", "idk");
+
+    insert_player("Josiah", "Jex", 0, 1000);
+    insert_player("Logan", "Seader", 0, 1000);
+    insert_player("Lacey", "Rael", 0, 1000);
+    insert_player("Lucy", "Mock", 0, 1000);
+    insert_player("Logan", "Seader", 0, 1000);
+    insert_player("Lacey", "Rael", 0, 1000);
+    insert_player("Lucy", "Mock", 0, 1000);
+    insert_player("Logan", "Seader", 0, 1000);
+    insert_player("Lacey", "Rael", 0, 1000);
+
+    insert_school("Rock Canyon", "Colorado", "idk");
+
+    insert_player("Rohan", "Kotwal", 1, 1000);
+    insert_player("Anirudh", "Sura", 1, 1000);
+    insert_player("Alex", "Hoover", 1, 1000);
+    insert_player("Rohan", "Kotwal", 1, 1000);
+    insert_player("Anirudh", "Sura", 1, 1000);
+    insert_player("Alex", "Hoover", 1, 1000);
+
+    insert_tournament(0, "Colorado", "State Tournament Colorado", "idk", 4);
+
+    for (let i = 0; i < player_register_id; i++) {
+        update_tournament_players(0, i);
+    }
+
+    run_round(0);
+
+    let x = Math.round(Object.keys(player_register).length / 2);
+
+
+    for (let i = 0; i < x; i++) {
+        random_match_result(0 + i);
+    }
+
+    run_round(0);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x + i);
+    }
+
+    run_round(0);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 2 + i);
+    }
+
+    run_round(0);
+    for (let i = 0; i < x; i++) {
+        random_match_result(x * 3 + i);
+    }
+
+    console.log("Final scores", sort_wins(4, read_players_db(0)));
+}
+
+
+
 //test_case_4();
+//test_case_5();
+//test_case_6();
+
 
 /* end of testing */

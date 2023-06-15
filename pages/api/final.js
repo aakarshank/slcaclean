@@ -25,11 +25,7 @@ export default async function handler(req, res) {
         
         let newRoundNum = 1;
         
-
-        //If previous rounds exist!
-        if(!(typeof req.body.roundId == 'undefined')){
-
-            //Lock the previous round.
+        if (req.body.setting=='lock'){
             const latestRound = await prisma.round.update({
                 where:{
                     id: req.body.roundId,
@@ -38,7 +34,14 @@ export default async function handler(req, res) {
                     locked: true
                 }
             })
+            res.status(200).json({message:'success'})
+        }
+        else {
+        //If previous rounds exist!
+        if(!(typeof req.body.roundId == 'undefined')){
 
+            //Lock the previous round.
+            
             //Updating player records
 
             //First, obtain what actually happened in the round.
@@ -75,7 +78,9 @@ export default async function handler(req, res) {
                 }
                 
             }
-            newRoundNum = latestRound.num+1
+            console.log(req.body.rounds,'roundsss')
+            newRoundNum = req.body.rounds+1
+
         }
 
         //Now, functions occur regardless of whether this is the first round or not.
@@ -95,6 +100,7 @@ export default async function handler(req, res) {
         console.log("hello! function done!")
 
         res.status(200).json({message: newRound.id});
+    }
     }
     else{
         res.status(200).json({ message: "This doesn't do anything!"});

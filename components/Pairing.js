@@ -60,7 +60,7 @@ export default function Pairing({section}){
             headers: {
                 'Content-Type': 'application/json',
               },
-            body: JSON.stringify({sectionId: section, roundId: activeRound}),
+            body: JSON.stringify({sectionId: section, roundId: activeRound,rounds:roundInfo.length}),
         });
         const data = await res.json();
         fetchRounds();
@@ -68,11 +68,22 @@ export default function Pairing({section}){
         fetchMatchData();
         
     }
-
-    //Update the match data for current round in the db.
-    async function save(){
+    
+    async function lockRound(){
         setMatchesSaved(true);
         matchSaved = true;
+        const res = await fetch('/api/final',{
+            method:'POST',
+            headers:{
+                'Content-Type':'application/json',
+            },
+            body:JSON.stringify({sectionId:section,roundId:activeRound,setting:'lock'})
+        })
+        fetchRounds()
+    }
+    //Update the match data for current round in the db.
+    async function save(){
+
         console.log('match data'+matchData)
         await fetch("/api/update", {
             method: 'POST',
@@ -81,7 +92,6 @@ export default function Pairing({section}){
               },
             body: JSON.stringify({matchData: matchData}),
         })
-        fetchMatchData();
     }
 
     //delete the current round
@@ -142,7 +152,7 @@ export default function Pairing({section}){
                     {(matchData.length>0 && activeRoundLocked) && <LockedDisplayTable matches={matchData} section={section}/>}
 
                     {/* Controls for pairing, including auto, save, and finalize. */}
-                    {(matchData.length>0) && 
+                    {(!activeRoundLocked && matchData.length>0) && 
                         <div className="flex items-center space-x-2">
                             <button onClick={autoPair} className="flex space-x-2 items-center bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
                                 <BoltIcon className='h-5 w-5' />
@@ -156,10 +166,18 @@ export default function Pairing({section}){
                                 <p>Delete Current Round</p>
                             </button>
                             
-                            <Modal createNextRound={createNextRound} disabled = {!sync} saved={matchesSaved}/>
+                            <button onClick={lockRound} className="flex space-x-2 items-center bg-red-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                                <p>Lock Current Round</p>
+                            </button>
                             
                         </div>
                     }
+                    {(activeRoundLocked && matchData.length>0) &&
+                    <div>
+                        <p className="italic">Results are final & cannot be modified.</p>
+                        <Modal createNextRound={createNextRound} disabled = {!sync} saved={true} text={'Generate Next Round'}/>
+                    </div>
+                    } 
 
                 </div>
             }
